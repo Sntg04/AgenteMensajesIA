@@ -1,4 +1,3 @@
-// Asegúrate de que el paquete coincida con tu proyecto
 package com.ia.mensajes.agentemensajesia.resources;
 
 import com.ia.mensajes.agentemensajesia.model.Mensaje;
@@ -10,6 +9,7 @@ import jakarta.ws.rs.core.Response;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
@@ -32,18 +32,13 @@ public class MensajeResource {
             @FormDataParam("file") InputStream fileInputStream,
             @FormDataParam("file") FormDataContentDisposition fileMetaData) {
         
-        System.out.println("Recibiendo archivo para procesar: " + fileMetaData.getFileName());
-
         try {
             List<Mensaje> mensajesProcesados = mensajeService.procesarArchivoExcel(fileInputStream);
             
-            if (mensajesProcesados.isEmpty()) {
+            if (mensajesProcesados == null || mensajesProcesados.isEmpty()) {
                 return Response.ok(Map.of("mensaje", "El archivo estaba vacío o no contenía datos válidos.", "mensajes", List.of(), "loteId", "")).build();
             }
 
-            // =======================================================
-            // == CORRECCIÓN CLAVE: Construir una respuesta con loteId y mensajes ==
-            // =======================================================
             String loteId = mensajesProcesados.get(0).getLoteCarga();
             Map<String, Object> respuesta = Map.of(
                 "loteId", loteId,
@@ -59,19 +54,59 @@ public class MensajeResource {
         }
     }
 
-    // --- Endpoints para Filtros (sin cambios) ---
-    @GET
-    @Produces(MediaType.APPLICATION_JSON)
-    @RolesAllowed({"admin", "calidad"})
-    public void obtenerTodosLosMensajes() {
-        // ... (este método sigue igual)
-    }
-
     @GET
     @Path("/alertas")
     @Produces(MediaType.APPLICATION_JSON)
     @RolesAllowed({"admin", "calidad"})
-    public void obtenerMensajesDeAlerta() {
-        // ... (este método sigue igual)
+    public Response obtenerMensajesDeAlerta(@QueryParam("lote") String loteId) {
+        try {
+            List<Mensaje> alertas = mensajeService.obtenerAlertasPorLote(loteId);
+            return Response.ok(alertas).build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("{\"error\":\"Error al obtener alertas\"}").build();
+        }
+    }
+    
+    @GET
+    @Path("/alertas/exportar")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @RolesAllowed({"admin", "calidad"})
+    public Response exportarAlertas(@QueryParam("lote") String loteId) {
+        try {
+            ByteArrayInputStream excelStream = mensajeService.exportarAlertasAExcel(loteId);
+            return Response.ok(excelStream)
+                    .header("Content-Disposition", "attachment; filename=reporte_de_alertas.xlsx")
+                    .build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("Error al generar el reporte de alertas.").build();
+        }
+    }
+    
+    // --- Endpoint para Exportación Completa ---
+    @GET
+    @Path("/lote/exportar")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @RolesAllowed({"admin", "calidad"})
+    public Response exportarLoteCompleto(@QueryParam("lote") String loteId) {
+        try {
+            if (loteId == null || loteId.trim().isEmpty()) {
+                return Response.status(Response.Status.BAD_REQUEST).entity("El ID del lote es requerido.").build();
+            }
+            
+            ByteArrayInputStream excelStream = mensajeService.exportarLoteCompletoAExcel(loteId);
+            
+            // Generar un nombre de archivo dinámico y seguro
+            String fileName = "reporte_completo_lote_" + loteId.substring(0, Math.min(loteId.length(), 8)) + ".xlsx";
+
+            // Devolver la respuesta para que el navegador inicie la descarga
+            return Response.ok(excelStream)
+                    .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"") // comillas por seguridad
+                    .build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("Error al generar el reporte.").build();
+        }
     }
 }

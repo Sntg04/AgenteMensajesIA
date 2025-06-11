@@ -1,7 +1,5 @@
-// Asegúrate de que el paquete coincida con tu proyecto.
 package com.ia.mensajes.agentemensajesia.ia;
 
-import com.ia.mensajes.agentemensajesia.ia.ResultadoClasificacion;
 import java.text.Normalizer;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -9,7 +7,6 @@ import java.util.stream.Collectors;
 
 public class ClasificadorMensajes {
 
-    // Tu lista de palabras clave (sin cambios)
     private static final Set<String> PALABRAS_ALERTA_ORIGINALES = Set.of(
         "silencio negativo", "reportes negativos", "localización interna", "cobro externo",
         "instancias jurídicas", "debito automático", "embargo", "localización a terceros",
@@ -36,15 +33,12 @@ public class ClasificadorMensajes {
         if (textoMensaje == null || textoMensaje.trim().isEmpty()) {
             return new ResultadoClasificacion("Bueno", null); 
         }
-
         String mensajeNormalizado = normalizar(textoMensaje);
-
         for (String palabraClaveNormalizada : PALABRAS_ALERTA_NORMALIZADAS) {
             if (mensajeNormalizado.contains(palabraClaveNormalizada)) {
                 return new ResultadoClasificacion("Alerta", palabraClaveNormalizada);
             }
         }
-        
         return new ResultadoClasificacion("Bueno", null);
     }
 
@@ -54,17 +48,11 @@ public class ClasificadorMensajes {
 
     private static String normalizar(String texto) {
         if (texto == null) return "";
-        // 1. Convertir a minúsculas
         String textoNormalizado = texto.toLowerCase();
-        // 2. Normalizar para separar acentos de las letras
         textoNormalizado = Normalizer.normalize(textoNormalizado, Normalizer.Form.NFD);
-        // 3. Quitar los acentos (marcas diacríticas)
         Pattern pattern = Pattern.compile("\\p{InCombiningDiacriticalMarks}+");
-        // CORRECCIÓN: Se usa la variable correcta 'textoNormalizado'
         textoNormalizado = pattern.matcher(textoNormalizado).replaceAll("");
-        // 4. Quitar todos los signos de puntuación
         textoNormalizado = textoNormalizado.replaceAll("\\p{Punct}", "");
-        // 5. Reemplazar múltiples espacios/saltos de línea por un solo espacio y limpiar extremos
         textoNormalizado = textoNormalizado.replaceAll("\\s+", " ").trim();
         return textoNormalizado;
     }

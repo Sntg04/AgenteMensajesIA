@@ -7,7 +7,7 @@
     <title>Gestión de Usuarios</title>
     <link rel="stylesheet" type="text/css" href="<%= request.getContextPath() %>/css/dashboard-styles.css">
 </head>
-<body data-context-path="<%= request.getContextPath() %>">
+<body>
 
     <div class="dashboard-container">
         <jsp:include page="sidebar.jsp" />
@@ -28,14 +28,12 @@
 
     <script>
         // --- Bloque 1: Verificación de Autenticación y Variables Globales ---
-        window.addEventListener('pageshow', function(event) { if (event.persisted) { window.location.reload(); } });
-        
         const token = localStorage.getItem('jwtToken');
         const username = localStorage.getItem('username');
         const userRole = localStorage.getItem('userRole');
-        const contextPath = document.body.dataset.contextPath || "/AgenteMensajesIA";
-        let userCache = [];
-        
+        const contextPath = "/AgenteMensajesIA"; // Usamos el valor fijo para evitar problemas de URL
+        let userCache = []; 
+
         if (!token || userRole !== 'admin') { 
             alert('Acceso no autorizado. Redirigiendo a login.');
             window.location.href = contextPath + '/login.jsp'; 
@@ -49,64 +47,116 @@
             document.getElementById('closeModalBtn').addEventListener('click', () => { document.getElementById('userModal').style.display = 'none'; });
             window.addEventListener('click', (event) => { if (event.target == document.getElementById('userModal')) { document.getElementById('userModal').style.display = 'none'; } });
             document.getElementById('userForm').addEventListener('submit', handleFormSubmit);
-            document.getElementById('userListTableContainer').addEventListener('click', handleTableActions);
             fetchUsers();
         });
 
         // --- Bloque 3: Definición de Funciones ---
-        function handleTableActions(event) {
-            const editButton = event.target.closest('.edit-btn');
-            if (editButton) {
-                const userIdToEdit = editButton.dataset.id;
-                const userToEdit = userCache.find(user => user.id == userIdToEdit);
-                if (userToEdit) { openUserModalForEdit(userToEdit); }
-                return;
-            }
-            const deactivateButton = event.target.closest('.deactivate-btn');
-            if (deactivateButton) {
-                const userId = deactivateButton.dataset.id;
-                const userUsername = deactivateButton.dataset.username;
-                if (confirm(`¿Estás seguro de que quieres desactivar al usuario "${userUsername}"?`)) {
-                    deactivateUser(userId);
-                }
+
+        function handleEditClick(userId) {
+            const userToEdit = userCache.find(user => user.id == userId);
+            if (userToEdit) {
+                openUserModalForEdit(userToEdit);
             }
         }
 
+        function handleDeactivateClick(userId, userUsername) {
+            const safeUsername = userUsername.replace(/'/g, "\\'");
+            if (confirm('¿Estás seguro de que quieres desactivar al usuario "' + safeUsername + '"?')) {
+                deactivateUser(userId);
+            }
+        }
+        
+        function openUserModalForCreate() {
+            document.getElementById('formTitle').textContent = 'Crear Nuevo Usuario';
+            document.getElementById('userForm').reset();
+            document.getElementById('userId').value = '';
+            document.getElementById('usernameInput').disabled = false;
+            document.getElementById('passwordInput').placeholder = "Contraseña requerida";
+            document.getElementById('userModal').style.display = 'block';
+        }
+
+        function openUserModalForEdit(user) {
+            document.getElementById('formTitle').textContent = 'Editar Usuario';
+            document.getElementById('userForm').reset();
+            document.getElementById('userId').value = user.id;
+            document.getElementById('usernameInput').value = user.username;
+            document.getElementById('usernameInput').disabled = true;
+            document.getElementById('nombreCompletoInput').value = user.nombreCompleto;
+            document.getElementById('rolInput').value = user.rol;
+            document.getElementById('passwordInput').placeholder = "Dejar en blanco para no cambiar";
+            document.getElementById('userModal').style.display = 'block';
+        }
+        
+        function handleFormSubmit(event) {
+            event.preventDefault();
+            const userId = document.getElementById('userId').value;
+            const userData = {
+                username: document.getElementById('usernameInput').value,
+                passwordHash: document.getElementById('passwordInput').value,
+                nombreCompleto: document.getElementById('nombreCompletoInput').value,
+                rol: document.getElementById('rolInput').value,
+                activo: true
+            };
+            if (userId && !userData.passwordHash) {
+                delete userData.passwordHash;
+            }
+            if (userId) {
+                updateUser(userId, userData);
+            } else {
+                createUser(userData);
+            }
+        }
+        
         function fetchUsers() {
-            fetch(contextPath + '/api/usuarios', { headers: { 'Authorization': 'Bearer ' + token } })
+            const url = contextPath + '/api/usuarios';
+            fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
             .then(res => res.ok ? res.json() : Promise.reject(new Error(`Error ${res.status}`)))
             .then(users => {
                 userCache = users;
                 let tableHtml = '<table><thead><tr><th>ID</th><th>Username</th><th>Nombre</th><th>Rol</th><th>Activo</th><th>Acciones</th></tr></thead><tbody>';
                 if (users && users.length > 0) {
                     users.forEach(user => {
-                        // CORRECCIÓN FINAL: Se añade la barra invertida \ a cada 
-                        tableHtml += `<tr>
-                                        <td>\${user.id}</td>
-                                        <td>\${escapeHtml(user.username)}</td>
-                                        <td>\${escapeHtml(user.nombreCompleto || '')}</td>
-                                        <td>\${escapeHtml(user.rol)}</td>
-                                        <td>\${user.activo ? 'Sí' : 'No'}</td>
-                                        <td>
-                                            <button class="btn btn-edit" data-id="\${user.id}">Editar</button>
-                                            <button class="btn btn-deactivate" data-id="\${user.id}" data-username="\${escapeHtml(user.username)}">Desactivar</button>
-                                        </td>
-                                    </tr>`;
+                        tableHtml += '<tr><td>' + user.id + '</td><td>' + escapeHtml(user.username) + '</td><td>' + escapeHtml(user.nombreCompleto || '') + '</td><td>' + escapeHtml(user.rol) + '</td><td>' + (user.activo ? 'Sí' : 'No') + '</td>' +
+                                     '<td>' +
+                                        '<button class="btn btn-edit" onclick="handleEditClick(' + user.id + ')">Editar</button>' +
+                                        '<button class="btn btn-deactivate" onclick="handleDeactivateClick(' + user.id + ', \'' + escapeHtml(user.username) + '\')">Desactivar</button>' +
+                                     '</td></tr>';
                     });
-                } else { tableHtml += '<tr><td colspan="6">No se encontraron usuarios.</td></tr>'; }
+                } else {
+                    tableHtml += '<tr><td colspan="6">No se encontraron usuarios.</td></tr>';
+                }
                 tableHtml += '</tbody></table>';
                 document.getElementById('userListTableContainer').innerHTML = tableHtml;
-                document.getElementById('errorMessage').textContent = '';
             }).catch(error => { document.getElementById('errorMessage').textContent = "Error al cargar usuarios."; console.error(error); });
         }
         
-        function openUserModalForCreate() { document.getElementById('formTitle').textContent = 'Crear Nuevo Usuario'; document.getElementById('userForm').reset(); document.getElementById('userId').value = ''; document.getElementById('usernameInput').disabled = false; document.getElementById('passwordInput').placeholder = "Contraseña requerida"; document.getElementById('userModal').style.display = 'block'; }
-        function openUserModalForEdit(user) { document.getElementById('formTitle').textContent = 'Editar Usuario'; document.getElementById('userForm').reset(); document.getElementById('userId').value = user.id; document.getElementById('usernameInput').value = user.username; document.getElementById('usernameInput').disabled = true; document.getElementById('nombreCompletoInput').value = user.nombreCompleto; document.getElementById('rolInput').value = user.rol; document.getElementById('passwordInput').placeholder = "Dejar en blanco para no cambiar"; document.getElementById('userModal').style.display = 'block'; }
-        function handleFormSubmit(event) { event.preventDefault(); const userId = document.getElementById('userId').value; const userData = { username: document.getElementById('usernameInput').value, passwordHash: document.getElementById('passwordInput').value, nombreCompleto: document.getElementById('nombreCompletoInput').value, rol: document.getElementById('rolInput').value, activo: true }; if (userId && !userData.passwordHash) { delete userData.passwordHash; } if (userId) { updateUser(userId, userData); } else { createUser(userData); } }
-        function createUser(userData) { fetch(contextPath + '/api/usuarios', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(userData) }).then(res => res.ok ? res.json() : Promise.reject('Error al crear')).then(newUser => { alert(`Usuario "${newUser.username}" creado.`); fetchUsers(); document.getElementById('userModal').style.display = 'none'; }).catch(error => alert(error)); }
-        function updateUser(userId, userData) { fetch(contextPath + `/api/usuarios/${userId}`, { method: 'PUT', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(userData) }).then(res => res.ok ? res.json() : Promise.reject('Error al actualizar')).then(updatedUser => { alert(`Usuario "${updatedUser.username}" actualizado.`); fetchUsers(); document.getElementById('userModal').style.display = 'none'; }).catch(error => alert(error)); }
-        function deactivateUser(userId) { fetch(contextPath + `/api/usuarios/${userId}/desactivar`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } }).then(res => res.ok ? res.json() : Promise.reject('Error al desactivar')).then(data => { alert(data.mensaje); fetchUsers(); }).catch(error => alert(error)); }
-        function escapeHtml(unsafe) { return unsafe ? unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : ''; }
+        function createUser(userData) {
+            const url = contextPath + '/api/usuarios';
+            fetch(url, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(userData) })
+            .then(res => res.ok ? res.json() : res.json().then(err => Promise.reject(err)))
+            .then(newUser => { alert(`Usuario "${newUser.username}" creado con éxito.`); document.getElementById('userModal').style.display = 'none'; fetchUsers(); })
+            .catch(error => alert('Error al crear usuario: ' + (error.error || 'Error desconocido')));
+        }
+
+        function updateUser(userId, userData) {
+            const url = contextPath + '/api/usuarios/' + userId;
+            fetch(url, { method: 'PUT', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(userData) })
+            .then(res => res.ok ? res.json() : res.json().then(err => Promise.reject(err)))
+            .then(updatedUser => { alert(`Usuario "${updatedUser.username}" actualizado con éxito.`); document.getElementById('userModal').style.display = 'none'; fetchUsers(); })
+            .catch(error => alert('Error al actualizar usuario: ' + (error.error || 'Error desconocido')));
+        }
+
+        function deactivateUser(userId) {
+            const url = contextPath + '/api/usuarios/' + userId + '/desactivar';
+            fetch(url, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token } })
+            .then(res => res.ok ? res.json() : res.json().then(err => Promise.reject(err)))
+            .then(data => { alert(data.mensaje); fetchUsers(); })
+            .catch(error => alert('Error al desactivar usuario: ' + (error.error || 'Error desconocido')));
+        }
+        
+        function escapeHtml(unsafe) {
+            return unsafe ? unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : '';
+        }
     </script>
 </body>
 </html>
