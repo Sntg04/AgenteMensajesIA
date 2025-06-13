@@ -21,7 +21,6 @@
         .stat-card h4 { margin: 0 0 10px 0; color: #ccc; font-weight: normal; }
         .stat-card p { margin: 0; font-size: 1.8em; font-weight: bold; color: #fff; }
         .filter-buttons { margin-bottom: 20px; }
-        #exportFullReportBtn { float: right; }
     </style>
 </head>
 <body>
@@ -44,7 +43,8 @@
 
                 <div id="resultsContainer" class="content-section hidden" style="margin-top: 30px;">
                     <h3>Resultados del Análisis</h3>
-                    <button id="exportFullReportBtn" class="btn" style="display:none; padding: 10px 20px; float: right;">Exportar Reporte Completo</button>
+                    <button id="exportFullReportBtn" class="btn btn-create" style="padding: 10px 20px; float: right; display: none;">Exportar Reporte Completo (3 Hojas)</button>
+
                     <div id="statsBar" class="stats-bar" style="clear:both; padding-top:20px;"></div>
                     <div class="filter-buttons">
                         <button class="btn" id="filterTodos">Mostrar Todos</button>
@@ -58,30 +58,37 @@
     </div>
 
     <script>
-        window.addEventListener('pageshow', function(event) { if (event.persisted) { window.location.reload(); } });
+        // --- Bloque 1: Seguridad y Variables ---
         const token = localStorage.getItem('jwtToken');
         const username = localStorage.getItem('username');
-        const userRole = localStorage.getItem('userRole');
-        const contextPath = "/AgenteMensajesIA";
+        const contextPath = "/AgenteMensajesIA"; // Usamos valor fijo para robustez
         let currentMessages = [];
-        let currentLoteId = null;
+        let currentLoteId = null; // Variable para guardar el lote actual
 
-        if (!token || (userRole !== 'calidad' && userRole !== 'admin')) { 
-            alert('Acceso no autorizado.'); window.location.href = contextPath + '/login.jsp'; 
-        }
+        if (!token) { window.location.href = contextPath + '/login.jsp'; }
 
+        // --- Bloque 2: Lógica de la Página ---
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('usernameDisplay').textContent = username;
             document.getElementById('logoutButton').addEventListener('click', () => { localStorage.clear(); alert('Sesión cerrada.'); window.location.href = contextPath + '/login.jsp'; });
             document.getElementById('uploadForm').addEventListener('submit', handleUpload);
+            
+            // Listeners para los filtros
             document.getElementById('filterTodos').addEventListener('click', () => renderMessagesTable(currentMessages));
             document.getElementById('filterAlertas').addEventListener('click', () => renderMessagesTable(currentMessages.filter(m => m.clasificacion === 'Alerta')));
             document.getElementById('filterBuenos').addEventListener('click', () => renderMessagesTable(currentMessages.filter(m => m.clasificacion === 'Bueno')));
+
+            // Listener para el nuevo botón de exportación
             document.getElementById('exportFullReportBtn').addEventListener('click', () => {
-                if(currentLoteId) { exportFullReport(currentLoteId); }
+                if(currentLoteId) {
+                    exportFullReport(currentLoteId);
+                } else {
+                    alert("No hay un lote de carga activo para exportar.");
+                }
             });
         });
 
+        // --- Bloque 3: Funciones ---
         function handleUpload(event) {
             event.preventDefault();
             const fileInput = document.getElementById('excelFile');
@@ -92,7 +99,7 @@
             uploadButton.textContent = 'Procesando...';
             uploadStatusDiv.style.display = 'none';
             document.getElementById('exportFullReportBtn').style.display = 'none';
-            
+
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
             
@@ -101,25 +108,27 @@
                 headers: { 'Authorization': 'Bearer ' + token },
                 body: formData
             })
-            .then(res => res.ok ? res.json() : res.json().then(err => Promise.reject(err)))
+            .then(res => res.ok ? res.json() : Promise.reject('Error en la subida'))
             .then(data => {
-                const processedMessages = data.mensajes || [];
+                currentMessages = data.mensajes || [];
                 currentLoteId = data.loteId;
-
+                
                 uploadStatusDiv.className = 'success';
-                let successHtml = `¡Éxito! Se procesaron ${processedMessages.length} mensajes.`;
-                if (currentLoteId)
-                uploadStatusDiv.innerHTML = successHtml;
+                uploadStatusDiv.textContent = `¡Éxito! Se procesaron ${currentMessages.length} mensajes.`;
                 uploadStatusDiv.style.display = 'block';
 
-                currentMessages = processedMessages;
+                if (currentLoteId) {
+                    document.getElementById('exportFullReportBtn').style.display = 'inline-block';
+                }
+
                 updateStatistics(currentMessages);
                 renderMessagesTable(currentMessages);
                 document.getElementById('resultsContainer').classList.remove('hidden');
             })
             .catch(error => {
+                console.error('Error al subir el archivo:', error);
                 uploadStatusDiv.className = 'error';
-                uploadStatusDiv.textContent = 'Error: ' + (error.error || 'Verifique el formato del archivo.');
+                uploadStatusDiv.textContent = 'Error al procesar el archivo.';
                 uploadStatusDiv.style.display = 'block';
             })
             .finally(() => {
@@ -129,6 +138,7 @@
             });
         }
 
+        // --- FUNCIÓN NUEVA PARA EXPORTAR EL REPORTE COMPLETO ---
         function exportFullReport(loteId) {
             const url = contextPath + '/api/mensajes/lote/exportar?lote=' + loteId;
             const exportButton = document.getElementById('exportFullReportBtn');
@@ -152,7 +162,10 @@
                 a.remove();
                 window.URL.revokeObjectURL(downloadUrl);
             })
-            .catch(error => { alert('No se pudo descargar el reporte.'); console.error(error); })
+            .catch(error => {
+                console.error('Error al exportar:', error);
+                alert('No se pudo descargar el reporte.');
+            })
             .finally(() => {
                 exportButton.textContent = originalText;
                 exportButton.disabled = false;
@@ -173,17 +186,24 @@
 
         function renderMessagesTable(messages) {
             const container = document.getElementById('resultsTableContainer');
-            let tableHtml = '<table><thead><tr><th>Asesor</th><th>Aplicación</th><th>Mensaje</th><th>Clasificación</th><th>Sugerencia</th><th>Fecha</th><th>Hora</th></tr></thead><tbody>';
+            let tableHtml = '<table><thead><tr><th>Asesor</th><th>Aplicación</th><th>Mensaje Original</th><th>Clasificación</th><th>Sugerencia</th></tr></thead><tbody>';
             if (messages && messages.length > 0) {
                 messages.forEach(msg => {
-                    let fechaStr = msg.fechaMensaje || 'N/A';
-                    let horaStr = msg.horaMensaje || 'N/A';
-                    tableHtml += '<tr><td>' + escapeHtml(msg.nombreAsesor) + '</td><td>' + escapeHtml(msg.aplicacion) + '</td><td>' + escapeHtml(msg.textoOriginal) + '</td><td>' + escapeHtml(msg.clasificacion) + '</td><td>' + escapeHtml(msg.textoReescrito || '') + '</td><td>' + fechaStr + '</td><td>' + horaStr + '</td></tr>';
+                    tableHtml += '<tr>' +
+                                    '<td>' + escapeHtml(msg.nombreAsesor) + '</td>' +
+                                    '<td>' + escapeHtml(msg.aplicacion) + '</td>' +
+                                    '<td>' + escapeHtml(msg.textoOriginal) + '</td>' +
+                                    '<td>' + escapeHtml(msg.clasificacion) + '</td>' +
+                                    '<td>' + escapeHtml(msg.textoReescrito || '') + '</td>' +
+                                  '</tr>';
                 });
-            } else { tableHtml += '<tr><td colspan="7">No hay mensajes para mostrar.</td></tr>'; }
+            } else {
+                tableHtml += '<tr><td colspan="5">No hay mensajes para mostrar.</td></tr>';
+            }
             tableHtml += '</tbody></table>';
             container.innerHTML = tableHtml;
         }
+
         function escapeHtml(unsafe) { return unsafe ? unsafe.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;") : ''; }
     </script>
 </body>
