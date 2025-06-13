@@ -108,14 +108,7 @@
 
                 uploadStatusDiv.className = 'success';
                 let successHtml = `¡Éxito! Se procesaron ${processedMessages.length} mensajes.`;
-                if (currentLoteId) {
-                    const tieneAlertas = processedMessages.some(m => m.clasificacion === 'Alerta');
-                    successHtml += ` <br><a href="${contextPath}/reportes.jsp?lote=${currentLoteId}" target="_blank">Ver Reporte de Frecuencia</a>`;
-                    if (tieneAlertas) {
-                        successHtml += ` | <a href="${contextPath}/verAlertas.jsp?lote=${currentLoteId}" target="_blank">Ver Alertas de esta Carga</a>`;
-                    }
-                    document.getElementById('exportFullReportBtn').style.display = 'inline-block';
-                }
+                if (currentLoteId)
                 uploadStatusDiv.innerHTML = successHtml;
                 uploadStatusDiv.style.display = 'block';
 
