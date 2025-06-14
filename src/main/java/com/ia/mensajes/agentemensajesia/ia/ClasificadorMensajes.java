@@ -1,49 +1,84 @@
 package com.ia.mensajes.agentemensajesia.ia;
 
+import opennlp.tools.lemmatizer.LemmatizerME;
+import opennlp.tools.lemmatizer.LemmatizerModel;
+import opennlp.tools.postag.POSModel;
+import opennlp.tools.postag.POSTaggerME;
+import opennlp.tools.tokenize.TokenizerME;
+import opennlp.tools.tokenize.TokenizerModel;
+
+import java.io.IOException;
+import java.io.InputStream;
 import java.text.Normalizer;
 import java.util.Set;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 public class ClasificadorMensajes {
 
-    private static final Set<String> PALABRAS_ALERTA_ORIGINALES = Set.of(
-        "silencio negativo", "reportes negativos", "localización interna", "cobro externo",
-        "instancias jurídicas", "debito automático", "embargo", "localización a terceros",
-        "retención de vienes", "cobros por derecha", "visita domiciliaria", "embargo de vienes",
-        "abogado", "juridico", "responsabilidad financiera", "cobro automatico", "no ignore sus deudas",
-        "mora critica", "renuencia al pago", "evasivo", "evasión de pago", "obligacion",
-        "irresponsable", "incumplimientos", "proceso", "escala de cuenta", "cobros por honorarios",
-        "portafolio en mora", "está incumpliendo con su deber", "será reportado de inmediato",
-        "procederemos con acciones legales", "no se haga el desentendido", "no hay más excusas",
-        "se tomarán medidas drásticas", "aplicación de sanciones", "cartera castigada", "traslado",
-        "protocolo", "departamento de penalizacion", "cobro definitivo", "búsqueda interna",
-        "protocolo de cobranzas", "presion", "buro crediticio"
+    // Lista de palabras clave (lemas) - Sin cambios
+    private static final Set<String> PALABRAS_ALERTA_LEMAS = Set.of(
+        "deber", "obligacion", "incumplimiento", "proceso", "juridico", "abogado",
+        "embargo", "retencion", "sancion", "demanda", "legal", "reportar", "cobro",
+        "amenaza", "consecuencia", "evasion", "responsabilidad", "deuda", "mora",
+        "buro", "presion", "penalizacion", "visita", "tercero", "localizacion", "castigado"
     );
 
-    private static final Set<String> PALABRAS_ALERTA_NORMALIZADAS;
+    // --- INICIALIZACIÓN DE MODELOS NLP ---
+    private static final TokenizerME tokenizer;
+    private static final POSTaggerME posTagger;
+    private static final LemmatizerME lemmatizer; // <--- CAMBIO AQUÍ
 
     static {
-        PALABRAS_ALERTA_NORMALIZADAS = PALABRAS_ALERTA_ORIGINALES.stream()
-                                           .map(ClasificadorMensajes::normalizar)
-                                           .collect(Collectors.toSet());
+        try {
+            // Cargar modelo de Tokenizer (sin cambios)
+            try (InputStream modelIn = ClasificadorMensajes.class.getResourceAsStream("/models/es/es-token.bin")) {
+                if (modelIn == null) throw new IOException("No se encontró el modelo de tokenizer: /models/es/es-token.bin");
+                TokenizerModel tokenModel = new TokenizerModel(modelIn);
+                tokenizer = new TokenizerME(tokenModel);
+            }
+
+            // Cargar modelo de POS Tagger (sin cambios)
+            try (InputStream modelIn = ClasificadorMensajes.class.getResourceAsStream("/models/es/es-pos-maxent.bin")) {
+                if (modelIn == null) throw new IOException("No se encontró el modelo POS: /models/es/es-pos-maxent.bin");
+                POSModel posModel = new POSModel(modelIn);
+                posTagger = new POSTaggerME(posModel);
+            }
+
+            // --- CAMBIO IMPORTANTE: Cargar MODELO de Lemmatizer ---
+            try (InputStream modelIn = ClasificadorMensajes.class.getResourceAsStream("/models/es/es-lemmatizer.bin")) {
+                if (modelIn == null) throw new IOException("No se encontró el modelo de lematización: /models/es/es-lemmatizer.bin");
+                LemmatizerModel lemmatizerModel = new LemmatizerModel(modelIn);
+                lemmatizer = new LemmatizerME(lemmatizerModel);
+            }
+
+        } catch (IOException e) {
+            throw new RuntimeException("Fallo al cargar los modelos de NLP. Asegúrese de que los archivos .bin estén en la ruta correcta y renombrados.", e);
+        }
     }
+
+    // El resto de la clase no necesita cambios...
     
     public ResultadoClasificacion clasificar(String textoMensaje) {
         if (textoMensaje == null || textoMensaje.trim().isEmpty()) {
-            return new ResultadoClasificacion("Bueno", null); 
+            return new ResultadoClasificacion("Bueno", null);
         }
+
         String mensajeNormalizado = normalizar(textoMensaje);
-        for (String palabraClaveNormalizada : PALABRAS_ALERTA_NORMALIZADAS) {
-            if (mensajeNormalizado.contains(palabraClaveNormalizada)) {
-                return new ResultadoClasificacion("Alerta", palabraClaveNormalizada);
+        String[] tokens = tokenizer.tokenize(mensajeNormalizado);
+        String[] tags = posTagger.tag(tokens);
+        String[] lemas = lemmatizer.lemmatize(tokens, tags);
+
+        for (String lema : lemas) {
+            if (PALABRAS_ALERTA_LEMAS.contains(lema)) {
+                return new ResultadoClasificacion("Alerta", lema);
             }
         }
+        
         return new ResultadoClasificacion("Bueno", null);
     }
 
     public String reescribir(String textoOriginal) {
-        return "Sugerencia: intente usar un tono más neutral y informativo.";
+        return "Sugerencia: Intente reformular la frase usando un tono más neutral y enfocado en soluciones, evitando palabras que puedan interpretarse como una amenaza o presión.";
     }
 
     private static String normalizar(String texto) {
@@ -52,7 +87,6 @@ public class ClasificadorMensajes {
         textoNormalizado = Normalizer.normalize(textoNormalizado, Normalizer.Form.NFD);
         Pattern pattern = Pattern.compile("\\p{InCombiningDiacriticalMarks}+");
         textoNormalizado = pattern.matcher(textoNormalizado).replaceAll("");
-        textoNormalizado = textoNormalizado.replaceAll("\\p{Punct}", "");
         textoNormalizado = textoNormalizado.replaceAll("\\s+", " ").trim();
         return textoNormalizado;
     }
